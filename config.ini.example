@@ -1,0 +1,11 @@
+LINODE_TOKEN=your-api-token-here
+EMAIL=admin@example.com
+PROPAGATION_SECONDS=120
+
+# One certificate per [[cert]] block
+# DOMAINS: space-separated list of SANs
+[[cert]]
+DOMAINS=example.com *.example.com
+
+[[cert]]
+DOMAINS=example.org www.aexample.org
