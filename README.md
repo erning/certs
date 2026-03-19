@@ -31,8 +31,9 @@ Edit `config.json` with your Linode API token, email, and domains:
 ## Usage
 
 ```bash
-just certs            # request/renew all certificates
-just certs --dry-run  # dry run
+just list             # show certificate status
+just renew            # request/renew all certificates
+just renew --dry-run  # dry run
 ```
 
 Certificates are stored in `certs/live/<domain>/`.

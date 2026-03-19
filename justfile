@@ -1,8 +1,8 @@
 # Request/renew Let's Encrypt certificates via Certbot DNS-Linode
 #
 # Usage:
-#   just certs              # request/renew all certificates
-#   just certs --dry-run    # dry run
+#   just renew              # request/renew all certificates
+#   just renew --dry-run    # dry run
 
 [private]
 default:
@@ -12,7 +12,7 @@ config := "config.json"
 certs_dir := justfile_directory() / "certs"
 
 # Request/renew all certificates
-certs *flags:
+renew *flags:
     #!/usr/bin/env bash
     set -euo pipefail
 
@@ -101,3 +101,108 @@ certs *flags:
         exit 1
     fi
     echo "All certificates obtained successfully."
+
+# List certificate status
+list:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    CONFIG="{{ justfile_directory() }}/{{ config }}"
+    CERTS_DIR="{{ certs_dir }}"
+
+    if [[ ! -f "$CONFIG" ]]; then
+        echo "Error: $CONFIG not found."
+        exit 1
+    fi
+
+    if ! command -v jq &>/dev/null; then
+        echo "Error: jq is required but not installed."
+        exit 1
+    fi
+
+    config_names=()
+
+    TOTAL=$(jq '.certs | length' "$CONFIG")
+    for i in $(seq 0 $((TOTAL - 1))); do
+        entry=$(jq -c ".certs[$i]" "$CONFIG")
+        cert_name=$(echo "$entry" | jq -r '.domains[0]' | sed 's/^\*\.//')
+        config_domains=$(echo "$entry" | jq -r '.domains[]' | sort)
+        config_domains_display=$(echo "$entry" | jq -r '.domains | join(", ")')
+
+        config_names+=("$cert_name")
+
+        cert_pem="$CERTS_DIR/live/$cert_name/cert.pem"
+
+        if [[ ! -f "$cert_pem" ]]; then
+            echo "$cert_name [NOT ISSUED]"
+            echo "  Domains (config): $config_domains_display"
+        else
+            # Extract SANs from certificate
+            cert_sans=$(openssl x509 -in "$cert_pem" -noout -text \
+                | grep -A1 "Subject Alternative Name" \
+                | tail -1 \
+                | sed 's/DNS://g; s/[[:space:]]//g' \
+                | tr ',' '\n' \
+                | sort)
+            cert_sans_display=$(echo "$cert_sans" | paste -sd, - | sed 's/,/, /g')
+
+            # Get expiry date
+            expiry_str=$(openssl x509 -in "$cert_pem" -noout -enddate | cut -d= -f2)
+            expiry_display=$(date -u -d "$expiry_str" "+%Y-%m-%d")
+            expiry_epoch=$(date -d "$expiry_str" "+%s")
+            now_epoch=$(date "+%s")
+            days_left=$(( (expiry_epoch - now_epoch) / 86400 ))
+
+            # Compare config domains with cert SANs
+            mismatch=""
+            if [[ "$config_domains" != "$cert_sans" ]]; then
+                mismatch=" [MISMATCH]"
+            fi
+
+            echo "$cert_name$mismatch"
+            echo "  Domains: $cert_sans_display"
+            if [[ -n "$mismatch" ]]; then
+                echo "  Domains (config): $config_domains_display"
+            fi
+            echo "  Expires: $expiry_display ($days_left days)"
+        fi
+        echo ""
+    done
+
+    # Find certs not in config
+    if [[ -d "$CERTS_DIR/live" ]]; then
+        for dir in "$CERTS_DIR/live"/*/; do
+            [[ -d "$dir" ]] || continue
+            name=$(basename "$dir")
+            in_config=false
+            for cn in "${config_names[@]}"; do
+                if [[ "$cn" == "$name" ]]; then
+                    in_config=true
+                    break
+                fi
+            done
+            if [[ "$in_config" == false ]]; then
+                cert_pem="$dir/cert.pem"
+                if [[ -f "$cert_pem" ]]; then
+                    cert_sans=$(openssl x509 -in "$cert_pem" -noout -text \
+                        | grep -A1 "Subject Alternative Name" \
+                        | tail -1 \
+                        | sed 's/DNS://g; s/[[:space:]]//g' \
+                        | tr ',' '\n' \
+                        | sort)
+                    cert_sans_display=$(echo "$cert_sans" | paste -sd, - | sed 's/,/, /g')
+
+                    expiry_str=$(openssl x509 -in "$cert_pem" -noout -enddate | cut -d= -f2)
+                    expiry_display=$(date -u -d "$expiry_str" "+%Y-%m-%d")
+                    expiry_epoch=$(date -d "$expiry_str" "+%s")
+                    now_epoch=$(date "+%s")
+                    days_left=$(( (expiry_epoch - now_epoch) / 86400 ))
+
+                    echo "$name [NOT IN CONFIG]"
+                    echo "  Domains: $cert_sans_display"
+                    echo "  Expires: $expiry_display ($days_left days)"
+                    echo ""
+                fi
+            fi
+        done
+    fi

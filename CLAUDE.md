@@ -10,13 +10,14 @@ Automated Let's Encrypt certificate management using Certbot DNS-Linode plugin v
 
 ```bash
 just                  # list available recipes
-just certs            # request/renew all certificates
-just certs --dry-run  # dry run (no actual cert issuance)
+just list             # show certificate status
+just renew            # request/renew all certificates
+just renew --dry-run  # dry run (no actual cert issuance)
 ```
 
 ## Architecture
 
-- **justfile** — single entry point; the `certs` recipe is a bash script that loops over `config.json` entries, running `docker run certbot/dns-linode` for each certificate
+- **justfile** — single entry point; the `renew` recipe is a bash script that loops over `config.json` entries, running `docker run certbot/dns-linode` for each certificate
 - **config.json** — real config with Linode API token, email, and cert definitions; encrypted at rest via git-crypt (see `.gitattributes`)
 - **config.example.jsonc** — JSONC reference with comments; not machine-parsed
 - **certs/** — output directory for Let's Encrypt data (gitignored)
@@ -32,4 +33,4 @@ just certs --dry-run  # dry run (no actual cert issuance)
 
 - Cert name is derived from the first domain in each entry, stripping any leading `*.` (e.g., `*.erning.com` → `erning.com`)
 - Linode credentials are written to a temp file with `trap` cleanup, mounted read-only into the container
-- Extra flags passed to `just certs` are forwarded directly to certbot (via justfile `*flags` parameter)
+- Extra flags passed to `just renew` are forwarded directly to certbot (via justfile `*flags` parameter)
